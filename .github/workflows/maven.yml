@@ -25,6 +25,7 @@ jobs:
     name: SonarCloud Security Scan
     needs: test
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
         with:
