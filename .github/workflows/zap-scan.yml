@@ -32,48 +32,42 @@ jobs:
           echo "Building Docker image..."
           docker build -t cicd-demo:test .
           echo "Docker image built successfully"
-
-      - name: Create Docker network
-        run: docker network create zap-network || true
+        continue-on-error: false
 
       - name: Run application container
         run: |
           echo "Starting application container..."
-          docker run -d \
-            --name cicd-demo-app \
-            --network zap-network \
-            -p 5000:5000 \
-            cicd-demo:test
+          docker run -d -p 5000:5000 --name cicd-demo-app cicd-demo:test
           echo "Container started, waiting for application to be ready..."
-          sleep 15
+          sleep 20
           
           # Wait for application to be ready
           for i in {1..30}; do
-            if curl -f http://localhost:5000/ 2>/dev/null; then
-              echo "Application is ready!"
+            if curl -s http://localhost:5000/ > /dev/null 2>&1; then
+              echo "✓ Application is ready!"
               break
             fi
             echo "Waiting for application... ($i/30)"
-            sleep 2
+            sleep 3
           done
           
-          # Verify endpoints are accessible
-          echo "Testing endpoints..."
-          curl -f http://localhost:5000/ || echo "Root endpoint check failed"
-          curl -f http://localhost:5000/version || echo "Version endpoint check failed"
-          curl -f http://localhost:5000/nations || echo "Nations endpoint check failed"
+          # Final verification
+          echo "Verifying application is accessible..."
+          curl -v http://localhost:5000/ || exit 1
+        continue-on-error: false
 
       - name: Run ZAP Baseline Scan
         run: |
+          mkdir -p ${{ github.workspace }}/zap-reports
           docker run --rm \
-            --network zap-network \
-            -v ${{ github.workspace }}:/zap/wrk/:rw \
+            --network host \
+            -v ${{ github.workspace }}/zap-reports:/zap/wrk/:rw \
             ghcr.io/zaproxy/zaproxy:stable \
             zap-baseline.py \
-            -t http://cicd-demo-app:5000 \
+            -t http://localhost:5000 \
             -I \
             -r zap-report.html \
-            || echo "ZAP scan completed with findings"
+            || true
         continue-on-error: true
 
       - name: Upload ZAP Report
@@ -81,7 +75,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: zap-scan-report
-          path: zap-report.html
+          path: ${{ github.workspace }}/zap-reports/zap-report.html
+          if-no-files-found: warn
         continue-on-error: true
 
       - name: Check container logs on failure
@@ -93,7 +88,7 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          echo "Cleaning up containers and network..."
+          echo "Cleaning up containers..."
           docker stop cicd-demo-app || true
           docker rm cicd-demo-app || true
-          docker network rm zap-network || true
+          echo "Cleanup completed"
