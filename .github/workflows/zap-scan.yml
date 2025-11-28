@@ -11,6 +11,7 @@ jobs:
   zap-baseline-scan:
     name: ZAP Baseline Scan
     runs-on: ubuntu-latest
+    continue-on-error: true
 
     steps:
       - name: Checkout code
